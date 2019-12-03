@@ -16,31 +16,49 @@ import {
   Text,
   StatusBar,
   FlatList,
+  NativeModules,
+  NativeEventEmitter,
+  Alert,
 } from 'react-native';
 import BleManager from 'react-native-ble-manager';
+const BleManagerModule = NativeModules.BleManager;
+const bleManagerEmitter = new NativeEventEmitter(BleManagerModule);
 // const BLE = new BleManager();
 class App extends Component {
   constructor(props) {
     super(props);
     this.state = {
-      devices: [],
+      is_scanning: false, // whether the app is currently scanning for peripherals or not
+      peripherals: null, // the peripherals detected
+      connected_peripheral: null, // the currently connected peripheral
+      user_id: null, // the ID of the current user
+      attendees: null, // the attendees currently synced with the app
+      promptVisible: false, // whether the prompt for the user's name is visible or not
+      has_attended: false, // whether the current user has already attended
     };
+    this.peripherals = [];
   }
 
   componentDidMount() {
-    console.log('Ble====>', BleManager, BleManager.checkState());
-
-    BleManager.isPeripheralConnected().then(res =>
-      console.log('connecton status', res),
-    );
-    BleManager.start({showAlert: false}).then(() => {
-      // Success code
-      console.log('Module initialized');
-      BleManager.scan([], 5, false).then(res => {
-        // Success code
-        console.log('Scan started', res);
+    // console.log('Ble====>', BleManager, BleManager.checkState());
+    BleManager.enableBluetooth()
+      .then(() => {
+        console.log('Bluetooth is already enabled');
+      })
+      .catch(error => {
+        Alert.alert('You need to enable bluetooth to use this app.');
       });
+
+    BleManager.start({showAlert: false}).then(() => {
+      console.log('Module initialized');
     });
+
+    // BleManager.isPeripheralConnected().then(res =>
+    //   console.log('connecton status', res),
+    // );
+
+    bleManagerEmitter.addListener('BleManagerDiscoverPeripheral', this.handler);
+
     // BleManager.state()
     //   .then(state => {
     //     console.log('state====>', state);
@@ -65,7 +83,36 @@ class App extends Component {
     //     console.error('error', e);
     //   });
   }
+
+  handler = peripheral => {
+    var peripherals = this.peripherals; // get the peripherals
+    // check if the peripheral already exists
+    var el = peripherals.filter(el => {
+      return el.id === peripheral.id;
+    });
+
+    if (!el.length) {
+      peripherals.push({
+        id: peripheral.id, // mac address of the peripheral
+        name: peripheral.name, // descriptive name given to the peripheral
+      });
+      this.peripherals = peripherals; // update the array of peripherals
+    }
+  };
+
+  startScan = () => {
+    this.peripherals = [];
+    this.setState({
+      is_scanning: true,
+    });
+    BleManager.scan([], 2).then(() => {
+      console.log('scan started');
+    });
+  };
+
   render() {
+    console.log('state=======>', this.state);
+
     return (
       <>
         <StatusBar barStyle="dark-content" />
