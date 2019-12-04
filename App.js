@@ -19,15 +19,20 @@ import {
   NativeModules,
   NativeEventEmitter,
   Alert,
+  Platform,
+  TouchableOpacity,
 } from 'react-native';
-import BleManager from 'react-native-ble-manager';
+import {BleManager} from 'react-native-ble-plx';
+import {request, PERMISSIONS} from 'react-native-permissions';
+// import BleManager from 'react-native-ble-manager';
 const BleManagerModule = NativeModules.BleManager;
 const bleManagerEmitter = new NativeEventEmitter(BleManagerModule);
-// const BLE = new BleManager();
+const Bluetooth = new BleManager();
 class App extends Component {
   constructor(props) {
     super(props);
     this.state = {
+      devices: [],
       is_scanning: false, // whether the app is currently scanning for peripherals or not
       peripherals: null, // the peripherals detected
       connected_peripheral: null, // the currently connected peripheral
@@ -40,51 +45,39 @@ class App extends Component {
   }
 
   componentDidMount() {
-    // console.log('Ble====>', BleManager, BleManager.checkState());
-    BleManager.enableBluetooth()
-      .then(() => {
-        console.log('Bluetooth is already enabled');
+    this.RequestPermission();
+    this.enableBle();
+    this.startScan();
+  }
+  RequestPermission = () => {
+    request(
+      Platform.select({
+        android: PERMISSIONS.ANDROID.ACCESS_COARSE_LOCATION,
+        ios: PERMISSIONS.IOS.BLUETOOTH_PERIPHERAL,
+      }),
+    )
+      .then(res => {
+        console.log('PERMISSIONS', res);
       })
       .catch(error => {
-        Alert.alert('You need to enable bluetooth to use this app.');
+        console.log('PERMISSIONS error', error);
       });
+  };
+  enableBle = () => {
+    console.log('enabling Ble');
 
-    BleManager.start({showAlert: false}).then(() => {
-      console.log('Module initialized');
-    });
-
-    // BleManager.isPeripheralConnected().then(res =>
-    //   console.log('connecton status', res),
-    // );
-
-    bleManagerEmitter.addListener('BleManagerDiscoverPeripheral', this.handler);
-
-    // BleManager.state()
-    //   .then(state => {
-    //     console.log('state====>', state);
-    //     if (state === 'PoweredOn') {
-    //       BLE.startDeviceScan(
-    //         [],
-    //         {allowDuplicates: false},
-    //         (error, devices) => {
-    //           if (error) {
-    //             console.warn('Ble Scan error', error);
-    //             return;
-    //           }
-    //           // console.log('Devices===>', devices);
-    //           if (devices.isConnectable) {
-    //             this.setState({devices: [...this.state.devices, devices]});
-    //           }
-    //         },
-    //       );
-    //     }
-    //   })
-    //   .catch(e => {
-    //     console.error('error', e);
-    //   });
-  }
+    Bluetooth.enable()
+      .then(res => {
+        console.log('enableBle response====>', res);
+      })
+      .catch(e => {
+        console.log('enableBle error====>', e);
+      });
+  };
 
   handler = peripheral => {
+    console.log('inside BleManagerDiscoverPeripheral handler');
+
     var peripherals = this.peripherals; // get the peripherals
     // check if the peripheral already exists
     var el = peripherals.filter(el => {
@@ -105,9 +98,43 @@ class App extends Component {
     this.setState({
       is_scanning: true,
     });
-    BleManager.scan([], 2).then(() => {
-      console.log('scan started');
-    });
+    // BleManager.scan([], 2).then(res => {
+    //   console.log('scan started', res);
+    // });
+    Bluetooth.startDeviceScan(
+      [],
+      {allowDuplicates: false},
+      (error, devices) => {
+        // Success code
+        if (error) {
+          console.log('Scan error', error);
+        }
+        console.log(devices.name, 'Scan started', devices);
+        if (devices.name) {
+          var d = this.state.devices.filter(i => i.id === devices.id);
+          if (!d.length) {
+            this.setState(state => ({
+              devices: [...state.devices, devices],
+            }));
+          }
+        }
+      },
+    );
+  };
+
+  stopScan = () => {
+    Bluetooth.stopDeviceScan();
+  };
+
+  connect = id => {
+    this.stopScan();
+    Bluetooth.connectToDevice(id, {autoConnect: true})
+      .then(res => {
+        console.log('Device connection:', res);
+      })
+      .catch(e => {
+        console.log('Device connection error:', e);
+      });
   };
 
   render() {
@@ -129,16 +156,19 @@ class App extends Component {
                 renderItem={({item, index}) => {
                   console.log('devices========>', item);
                   return (
-                    <View
+                    <TouchableOpacity
+                      onPress={() => this.connect(item.id)}
                       key={Math.random()}
                       style={{
                         flexDirection: 'row',
                         justifyContent: 'space-between',
                         padding: 10,
+                        margin: 5,
+                        backgroundColor: '#fff',
                       }}>
                       <Text>{index + 1}</Text>
                       <Text>{item.name}</Text>
-                    </View>
+                    </TouchableOpacity>
                   );
                 }}
               />
